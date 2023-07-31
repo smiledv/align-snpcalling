@@ -1,0 +1,148 @@
+#Genome alignment module load
+module load java fastqc/0.11.9 bwa gatk/4.1.7.0 samtools/1.13
+
+#Quality control using fastqc for one sample
+"/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/FastQC/fastqc" "/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMEA7776600/ERR5059415_1.fastq.gz"
+"/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/FastQC/fastqc" "/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMEA7776600/ERR5059415_2.fastq.gz"
+
+#Trimming using trimmomatic for one sample
+#based on the QC results the trimming step is different for each sample
+java -Xmx80G -jar /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 80 -phred33 \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_1.fastq.gz \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_2.fastq.gz \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_1_trim.fastq.gz \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_1_unpaired.fastq.gz \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_2_trim.fastq.gz \
+/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_2_unpaired.fastq.gz \
+ILLUMINACLIP:/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/Trimmomatic-0.39/TruSeq3-PE.fa:2:30:15 LEADING:20 TRAILING:20 MINLEN:30
+
+#Second round quality control using fastqc for one sample to check the quality after trimming
+"/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/FastQC/fastqc" "/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_1_trim.fastq.gz"
+"/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/FastQC/fastqc" "/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_2_trim.fastq.gz"
+
+#Download reference genome fasta file from ENSEMBLE
+wget http://ftp.ensembl.org/pub/release-104/fasta/equus_caballus/dna/Equus_caballus.EquCab3.0.dna.toplevel.fa.gz
+
+#To use bwa aligner you need first index your fasta reference genome
+bwa index /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa
+
+#Alignement of each sample with bwa 
+bwa mem -M -t 80 \
+  -R "@RG\tID:SRR1055837\tLB:SRR1055837\tPL:ILLUMINA\tSM:SRR1055837" \
+  /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+  /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_1_trim.fastq.gz \
+  /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/SRR1055837_2_trim.fastq.gz \
+  > SRR1055837.sam
+
+#Use bbtools repar.sh in case of the error of: paired reads have different names: "SRR1055837.173", "SRR1055837.175"
+repair.sh(source address) in1=broken1.fq in2=broken2 out1=fixed1.fq out2=fixed2.fq outs=singletons.fq repair
+
+#then sort with GATK and make the bam file
+gatk SortSam \
+  -I SRR1055837.sam \
+  -O SRR1055837.sorted.bam \
+  -SO coordinate \
+  --CREATE_INDEX true --MAX_RECORDS_IN_RAM 500000
+
+#QC of bam file with samtools
+samtools flagstat bamfile
+samtools depth bamfile | awk '{sum+=$3;cnt++}END{print sum/cnt" "sum}'
+
+#If you want to count the *un-aligned* reads, you can use
+samtools view -c -f4 bamfile
+
+#If you want to count the *aligned* reads you, can use
+samtools view -c -F4 bamfile
+
+#Indel realignment is not necessary (removed from GATK4)
+
+#mark duplication with GATK
+gatk MarkDuplicates \
+  --REMOVE_DUPLICATES false --CREATE_INDEX true \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.bam \
+  -O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.bam \
+  --METRICS_FILE=/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.metrics
+
+#Indexing of reference genome
+samtools faidx /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa
+
+#Make dictionary of reference genome
+java -jar /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/picard.jar CreateSequenceDictionary R=/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa O=/gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.dict
+
+#Download reference VCF file from ENSEMBLE for recolibration: http://ftp.ensembl.org/pub/release-104/variation/vcf/equus_caballus/
+wget http://ftp.ensembl.org/pub/release-104/variation/vcf/equus_caballus/equus_caballus.vcf.gz
+#Index the vcf file
+tabix -p vcf vcffile
+
+#Recalibration based on the reference genome and reference vcf file
+gatk BaseRecalibrator \
+  -R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+  --known-sites  /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/equus_caballus.vcf.gz \
+  -O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recalibration_report.grp \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.bam
+
+gatk ApplyBQSR \
+  -R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+  -bqsr /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recalibration_report.grp \
+  -O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.bam
+
+#Extract Metrices to check our alignement (we need gatk3.8)
+#three metrices of coverage, insert size, and aligenment using GATK
+#two metices of depth and flagstat usnig Samtools
+
+module load java
+
+#just with gatk 3.8
+java -jar /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/GenomeAnalysisTK-3.8-1-0-gf15c1c3ef/GenomeAnalysisTK.jar \
+  -T DepthOfCoverage \
+  --omitDepthOutputAtEachBase \
+  --summaryCoverageThreshold 10 \
+  --summaryCoverageThreshold 25 \
+  --summaryCoverageThreshold 50 \
+  --summaryCoverageThreshold 100 \
+  --start 1 --stop 500 --nBins 499 -dt NONE \
+  -R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa  \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam \
+  -o /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.coverage
+   
+echo "look at the output"
+
+less -S /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.coverage.sample_interval_summary
+
+module load java fastqc/0.11.9 bwa gatk/4.1.7.0 samtools/1.13
+
+echo "check insert size"
+#just with gatk4
+gatk /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/modules/GenomeAnalysisTK-3.8-1-0-gf15c1c3ef/GenomeAnalysisTK.jar CollectInsertSizeMetrics \
+  -R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa  \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam \
+  -O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.metric.insertSize.tsv \
+  -H /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.metric.insertSize.histo.pdf \
+  --METRIC_ACCUMULATION_LEVEL LIBRARY
+
+echo "look ast the output"
+
+less -S /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.metric.insertSize.tsv
+
+echo "alignment metrices"
+#just with gatk4
+gatk CollectAlignmentSummaryMetrics \
+  -R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa  \
+  -I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam \
+  -O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.metric.alignment.tsv \
+  --METRIC_ACCUMULATION_LEVEL LIBRARY
+
+echo "look ast the output"
+
+less -S /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.metric.alignment.tsv
+
+echo "samtools flagstat"
+samtools flagstat /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam
+
+echo "samtools depth"
+samtools depth /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam
+
+
+
+
