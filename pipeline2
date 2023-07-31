@@ -1,0 +1,76 @@
+module load java fastqc/0.11.9 bwa gatk/4.1.7.0 samtools/1.13
+
+#snp calling
+
+gatk --java-options "-XX:ParallelGCThreads=80 -Xmx230g" HaplotypeCaller \
+-R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+-I /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/SAMN02179858/align/SRR1055837.sorted.dup.recal.bam \
+-O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/SRR1055837.vcf.gz \
+-ERC GVCF -L 1 -L 2 -L 3 -L 4 -L 5 -L 6 -L 7 -L 8 -L 9 -L 10 -L 11 -L 12 -L 13 -L 14 -L 15 -L 16 -L 17 -L 18 -L 19 -L 20 -L 21 -L 22 -L 23 -L 24 -L 25
+
+#merging vcfs of different chromosomes of one sample 
+
+gatk --java-options "-XX:ParallelGCThreads=80 -Xmx230g" CombineGVCFs \
+-R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+--variant /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/SRR515202_1_10.vcf.gz \
+--variant /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/SRR515202_10_20.vcf.gz \
+--variant /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/SRR515202_20_31.vcf.gz \
+-O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515202.vcf.gz
+
+#merging vcfs of different samples to get final VCF of chromosomes in Cedar (need more than 1 day)
+
+gatk --java-options "-XX:ParallelGCThreads=80 -Xmx230g" CombineGVCFs \
+-R /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/ERR5059415.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/ERR5059416.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR505867.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515202.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515203.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515204.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515205.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515206.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515208.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515209.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515211.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515212.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515213.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515214.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515215.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515216.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515217.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR515218.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR641364.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR641365.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR641366.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR641367.vcf.gz \
+-V /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/SRR1055837.vcf.gz \
+-L 1 -L 2 -L 3 -L 4 -L 5 \
+-O /gpfs/fs0/scratch/y/ymiar/milad/HORSE_WGS/var_cal/final_vcfs/chr_1_5.vcf.gz 
+
+#GATK quality control in cedar
+
+odule load java
+cd /scratch/milad/HORSE_WGS/modules/gatk-4.2.2.0
+
+./gatk SelectVariants \
+  -R /scratch/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+  -V /scratch/milad/final_vcf/horse_wgs.vcf.gz \
+  --select-type-to-include SNP \
+  -O /scratch/milad/final_vcf/horse_wgs_1.vcf
+
+./gatk VariantFiltration \
+        -R /scratch/milad/HORSE_WGS/reference/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+        -V /scratch/milad/final_vcf/horse_wgs_1.vcf \
+        -O /scratch/milad/final_vcf/horse_wgs_2.vcf \
+        -filter-name "QD_filter" -filter "QD < 2.0" \
+        -filter-name "FS_filter" -filter "FS > 60.0" \
+        -filter-name "MQ_filter" -filter "MQ < 40.0" \
+        -filter-name "SOR_filter" -filter "SOR > 4.0" \
+        -filter-name "MQRankSum_filter" -filter "MQRankSum < -12.5" \
+        -filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0"
+
+./gatk SelectVariants \
+        --exclude-filtered \
+        -V /scratch/milad/final_vcf/horse_wgs_2.vcf \
+        -O /scratch/milad/final_vcf/horse_wgs_gatkqc.vcf
+
