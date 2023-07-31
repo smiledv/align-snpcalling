@@ -1,0 +1,49 @@
+bwa index -a bwtsw ref.fa
+
+Picard CreateSequenceDictionary R=/home/SSA/Equus_caballus.EquCab2.dna.toplevel.fa O=/home/SSA/Equus_caballus.EquCab2.dna.toplevel.dict
+
+samtools faidx /home/SSA/Equus_caballus.EquCab2.dna.toplevel.fa
+
+bwa mem -M -R "@RG\tID:CHELSOTOON\tLB:CHELSOTOON\tPL:ILLUMINA\tSM:CHELSOTOON" \
+/media/milad/SMVahedi/Horse/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+ERR3465837_1_trimmed_T1.fastq.gz \
+ERR3465837_2_trimmed_T2.fastq.gz \
+> ERR3465837.sam
+
+#for samples with low quality reads
+
+trimmomatic PE \
+ERR3465837_1.fastq.gz \
+ERR3465837_2.fastq.gz \
+ERR3465837_1_trimmed_T1.fastq.gz \
+ERR3465837_1_un-trimmed_U1.fastq.gz \
+ERR3465837_2_trimmed_T2.fastq.gz \
+ERR3465837_2_un-trimmed_U2.fastq.gz \
+ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 SLIDINGWINDOW:6:20 MINLEN:30
+
+./samtools view -b -S ERR3465837.sam \
+-o ERR3465837.bam
+
+./samtools sort ERR1527947.bam -o ERR1527947.sorted.bam
+
+picard  MarkDuplicates INPUT=ERR1527947.sorted.bam \
+OUTPUT=ERR1527947.sorted.rmdup.bam \
+METRICS_FILE=ERR1527947.Metrics \
+VALIDATION_STRINGENCY=LENIENT MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=50
+
+./samtools index /media/milad/SMVahedi/Horse/AYTAK/AYTAK.sorted.rmdup.bam
+
+##############################################
+
+gatk  BaseRecalibrator -I AYTAK.sorted.rmdup.bam \
+-R /media/milad/SMVahedi/Horse/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+--known-sites /media/milad/SMVahedi/Horse/equus_caballus.vcf \
+-L 14 \
+-O AYTAK.grp
+
+gatk ApplyBQSR -R /media/milad/SMVahedi/Horse/Equus_caballus.EquCab3.0.dna.toplevel.fa \
+-I AYTAK.sorted.rmdup.bam \
+--bqsr-recal-file AYTAK.grp \
+-L 14 \
+-O AYTAK.sorted.rmdup.BQSR.bam
+
